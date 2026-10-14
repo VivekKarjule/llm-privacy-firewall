@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# project-specific
+.env
+data/*
+!data/.gitkeep
+*.bin
+*.gguf
+.ipynb_checkpoints/
