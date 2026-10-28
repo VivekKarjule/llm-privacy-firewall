@@ -10,7 +10,7 @@ def fake_llm(prompt: str) -> str:
     return f"Here is a summary. The record concerns {prompt.split('for ')[1].split(',')[0].lower()}."
 
 
-prompt = ("Summarize this medical record for John Doe, SSN 123-45-6789, "
+prompt = ("Summarize this medical record for john doe, SSN 123 45 6789, "
           "email john.doe@example.com, phone 9876543210.")
 
 for strategy in ("regex", "hybrid"):   # hybrid needs spaCy + en_core_web_sm
