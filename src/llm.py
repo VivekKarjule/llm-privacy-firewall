@@ -4,11 +4,13 @@ The firewall only ever hands a backend SANITIZED text.
 
   mock       - fake LLM, no key, no internet (default; tests and quick demos)
   ollama     - local model via Ollama (http://localhost:11434)
+  gemini     - Google Gemini API, free tier (needs GEMINI_API_KEY in your .env)
   anthropic  - cloud Claude API (needs ANTHROPIC_API_KEY in your .env)
 """
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 
 try:                       # optional: load keys from .env if python-dotenv is installed
@@ -25,6 +27,10 @@ SYSTEM_PROMPT = (
     "written, including the square brackets, whenever you refer to them. "
     "Never ask what they mean."
 )
+
+
+class BackendError(Exception):
+    """An error whose message is safe to show the user (never contains keys)."""
 
 
 def mock_llm(prompt: str, model: str | None = None) -> str:
@@ -53,6 +59,39 @@ def list_ollama_models() -> list[str]:
         return []
 
 
+def _extract_gemini_text(data: dict) -> str:
+    """Join the text parts of the first candidate in a Gemini response."""
+    try:
+        parts = data["candidates"][0]["content"]["parts"]
+        return "".join(p.get("text", "") for p in parts)
+    except (KeyError, IndexError, TypeError):
+        raise BackendError("Gemini returned no text (the reply may have been blocked).")
+
+
+def gemini_llm(prompt: str, model: str | None = None) -> str:
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise BackendError("GEMINI_API_KEY is not set. Add it to your .env file and restart the server.")
+    model = model or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body = json.dumps({
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+    }).encode()
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json", "x-goog-api-key": key})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return _extract_gemini_text(json.loads(resp.read()))
+    except urllib.error.HTTPError as e:
+        hints = {400: "bad request or invalid API key", 403: "key not allowed",
+                 404: f"model '{model}' not found, pick another model",
+                 429: "free-tier rate limit hit, wait a minute and retry"}
+        raise BackendError(f"Gemini error {e.code}: {hints.get(e.code, 'request failed')}.")
+    except urllib.error.URLError:
+        raise BackendError("Could not reach Gemini. Check your internet connection.")
+
+
 def anthropic_llm(prompt: str, model: str | None = None) -> str:
     import anthropic            # pip install anthropic
     client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from the environment
@@ -64,7 +103,8 @@ def anthropic_llm(prompt: str, model: str | None = None) -> str:
     return msg.content[0].text
 
 
-BACKENDS = {"mock": mock_llm, "ollama": ollama_llm, "anthropic": anthropic_llm}
+BACKENDS = {"mock": mock_llm, "ollama": ollama_llm, "gemini": gemini_llm,
+            "anthropic": anthropic_llm}
 
 
 def get_backend(name: str):

@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.firewall import Firewall
-from src.llm import get_backend, list_ollama_models
+from src.llm import BackendError, get_backend, list_ollama_models
 
 log = logging.getLogger("firewall")
 app = FastAPI(title="LLM Privacy Firewall", version="0.2")
@@ -37,7 +37,7 @@ class ChatRequest(BaseModel):
     prompt: str
     session_id: str | None = None
     strategy: str = "hybrid"      # regex | spacy | hybrid (fixed when the session starts)
-    backend: str = "mock"         # mock | ollama | anthropic
+    backend: str = "mock"         # mock | ollama | gemini | anthropic
     model: str | None = None      # e.g. an Ollama model name
 
 
@@ -97,6 +97,8 @@ def chat(req: ChatRequest):
     log.info("outgoing (sanitized) prompt: %s", safe)   # never log req.prompt
     try:
         raw = backend(safe, req.model)
+    except BackendError as e:
+        raise HTTPException(502, str(e))
     except Exception as e:
         raise HTTPException(502, f"LLM backend error ({type(e).__name__}). "
                                  "For Ollama: is it running and is the model installed?")

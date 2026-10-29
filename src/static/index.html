@@ -43,7 +43,7 @@ footer{margin-top:22px;color:var(--mute);font-size:13px}
   <div class="sub">Sensitive data is masked locally before anything reaches the LLM.</div></div>
   <div class="controls">
     <label>Detection<select id="strategy"><option value="hybrid">Hybrid (regex + NER)</option><option value="regex">Regex only</option><option value="spacy">spaCy only</option></select></label>
-    <label>LLM<select id="backend"><option value="mock">Mock (offline)</option><option value="ollama">Ollama (local)</option><option value="anthropic">Claude API (cloud)</option></select></label>
+    <label>LLM<select id="backend"><option value="mock">Mock (offline)</option><option value="ollama">Ollama (local)</option><option value="gemini">Gemini (free cloud API)</option><option value="anthropic">Claude API (cloud)</option></select></label>
     <label id="mwrap" hidden>Model<select id="model"></select></label>
   </div>
 </header>
@@ -85,10 +85,11 @@ function clearAll(){["s1","s2","s3","s4"].forEach(i=>{$(i).classList.add('empty'
 document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{$('prompt').value=SAMPLES[c.dataset.i]});
 $('strategy').onchange=()=>{sid=null};
 $('backend').onchange=async()=>{
- const o=$('backend').value==='ollama';$('mwrap').hidden=!o;if(!o)return;
- const sel=$('model');sel.innerHTML="";
- try{const d=await (await fetch('/models')).json();
-  (d.ollama.length?d.ollama:[""]).forEach(m=>{const op=document.createElement('option');op.value=m;op.textContent=m||"No models found - is Ollama running?";sel.appendChild(op)})}
+ const b=$('backend').value,sel=$('model');$('mwrap').hidden=!(b==='ollama'||b==='gemini');sel.innerHTML="";
+ const fill=(arr,empty)=>(arr.length?arr:[""]).forEach(m=>{const op=document.createElement('option');op.value=m;op.textContent=m||empty;sel.appendChild(op)});
+ if(b==='gemini'){fill(["gemini-3.6-flash","gemini-3.5-flash","gemini-2.5-flash","gemini-3.5-flash-lite"]);return}
+ if(b!=='ollama')return;
+ try{const d=await (await fetch('/models')).json();fill(d.ollama,"No models found - is Ollama running?")}
  catch(e){sel.innerHTML='<option value="">Could not reach server</option>'}};
 $('reset').onclick=async()=>{if(sid){try{await fetch('/session/'+sid,{method:'DELETE'})}catch(e){}}sid=null;clearAll();$('err').textContent=""};
 $('run').onclick=async()=>{
@@ -97,7 +98,7 @@ $('run').onclick=async()=>{
  try{
   const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
    prompt,session_id:sid,strategy:$('strategy').value,backend:$('backend').value,
-   model:$('backend').value==='ollama'?($('model').value||null):null})});
+   model:['ollama','gemini'].includes($('backend').value)?($('model').value||null):null})});
   const d=await r.json();if(!r.ok)throw new Error(d.detail||r.statusText);
   sid=d.session_id;
   put('s1',esc(prompt));put('s2',hl(d.sanitized_prompt));put('s3',hl(d.raw_response));put('s4',esc(d.response));

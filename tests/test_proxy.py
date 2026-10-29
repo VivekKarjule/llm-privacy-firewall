@@ -60,3 +60,17 @@ def test_response_has_raw_reply_and_entity_names_but_no_originals():
 
 def test_models_endpoint_returns_a_list():
     assert isinstance(client.get("/models").json()["ollama"], list)
+
+
+def test_gemini_without_key_gives_clear_error(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = post(backend="gemini")
+    assert r.status_code == 502 and "GEMINI_API_KEY" in r.json()["detail"]
+
+
+def test_gemini_reply_parsing():
+    from src.llm import _extract_gemini_text, BackendError
+    ok = {"candidates": [{"content": {"parts": [{"text": "Hello "}, {"text": "[PERSON_1]"}]}}]}
+    assert _extract_gemini_text(ok) == "Hello [PERSON_1]"
+    with pytest.raises(BackendError):
+        _extract_gemini_text({"candidates": []})
