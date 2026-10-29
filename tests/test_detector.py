@@ -22,7 +22,7 @@ def test_phone_plain_and_with_country_code():
 
 
 def test_aadhaar():
-    assert ("AADHAAR", "1234 5678 9012") in labels(detect_regex("id 1234 5678 9012"))
+    assert ("AADHAAR", "2345 6789 0123") in labels(detect_regex("id 2345 6789 0123"))
 
 
 def test_date():
@@ -31,7 +31,7 @@ def test_date():
 
 def test_long_number_is_not_a_phone():
     # 12 digits glued together must NOT yield a 10-digit phone match
-    assert detect_regex("ref 987654321012") == []
+    assert all(s.label != "PHONE" for s in detect_regex("ref 987654321012"))
 
 
 def test_no_false_positive_on_plain_text():

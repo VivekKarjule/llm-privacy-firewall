@@ -25,3 +25,8 @@ class Firewall:
 
     def restore(self, llm_response: str) -> str:
         return rehydrate(llm_response, self._mapper.mapping)
+
+    @property
+    def entities_masked(self) -> int:
+        """Distinct sensitive values masked so far in this session."""
+        return len(self._mapper.mapping)
