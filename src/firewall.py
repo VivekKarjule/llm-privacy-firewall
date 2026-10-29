@@ -30,3 +30,8 @@ class Firewall:
     def entities_masked(self) -> int:
         """Distinct sensitive values masked so far in this session."""
         return len(self._mapper.mapping)
+
+    @property
+    def placeholders(self) -> list[str]:
+        """Placeholder names issued so far, e.g. ['[PERSON_1]']. Never the originals."""
+        return list(self._mapper.mapping)

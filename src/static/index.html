@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM Privacy Firewall</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#16202c;--mute:#5d6b7a;--line:#e2e7ee;--local:#0f766e;--cloud:#b45309;--btn:#1e3a8a;--hl:rgba(180,83,9,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1720;--card:#17212d;--ink:#e8edf3;--mute:#9aa8b7;--line:#263444;--local:#2dd4bf;--cloud:#fbbf24;--btn:#2563eb;--hl:rgba(251,191,36,.2)}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,"Segoe UI",Arial,sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:18px 32px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+h1{font-size:22px;margin:0}h1 span{color:var(--local)}
+.sub{color:var(--mute);font-size:14px}
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+label{font-size:12px;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+select,textarea,button{font:inherit;color:inherit}
+select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+main{max-width:1300px;margin:0 auto;padding:24px 32px 40px}
+.input{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+textarea{width:100%;min-height:90px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.chip{border:1px solid var(--line);background:var(--bg);padding:5px 12px;border-radius:99px;cursor:pointer;font-size:14px}
+.chip:hover{border-color:var(--local)}
+.ghost{background:none;border:1px solid var(--line);padding:9px 16px;border-radius:10px;cursor:pointer}
+.run{margin-left:auto;background:var(--btn);color:#fff;border:0;padding:10px 24px;border-radius:10px;font-weight:600;cursor:pointer}
+.run:disabled{opacity:.6;cursor:wait}
+.err{color:#dc2626;margin-top:10px;min-height:1px}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:22px}
+@media(max-width:1050px){.flow{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.flow{grid-template-columns:1fr}}
+.step{background:var(--card);border:1px solid var(--line);border-top:5px solid var(--c);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:230px}
+.step.local{--c:var(--local)}.step.cloud{--c:var(--cloud)}
+.tag{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--c)}
+.step h2{font-size:18px;margin:0}
+.body{white-space:pre-wrap;word-break:break-word;flex:1}
+.empty{color:var(--mute);font-style:italic}
+mark{background:var(--hl);color:inherit;padding:1px 5px;border-radius:5px;font-weight:600}
+.stat{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--mute);font-size:14px}
+.stat mark{font-size:13px}
+footer{margin-top:22px;color:var(--mute);font-size:13px}
+</style></head><body>
+<header>
+  <div><h1><span>&#128737;</span> LLM Privacy Firewall</h1>
+  <div class="sub">Sensitive data is masked locally before anything reaches the LLM.</div></div>
+  <div class="controls">
+    <label>Detection<select id="strategy"><option value="hybrid">Hybrid (regex + NER)</option><option value="regex">Regex only</option><option value="spacy">spaCy only</option></select></label>
+    <label>LLM<select id="backend"><option value="mock">Mock (offline)</option><option value="ollama">Ollama (local)</option><option value="anthropic">Claude API (cloud)</option></select></label>
+    <label id="mwrap" hidden>Model<select id="model"></select></label>
+  </div>
+</header>
+<main>
+  <section class="input">
+    <textarea id="prompt" placeholder="Type a prompt that contains personal data..."></textarea>
+    <div class="row">
+      <span class="sub">Try:</span>
+      <span class="chip" data-i="0">Medical record</span>
+      <span class="chip" data-i="1">Discharge note</span>
+      <span class="chip" data-i="2">Tricky formatting</span>
+      <button class="ghost" id="reset">New session</button>
+      <button class="run" id="run">Run through firewall</button>
+    </div>
+    <div class="err" id="err"></div>
+  </section>
+  <section class="flow">
+    <div class="step local"><div class="tag">1 &middot; Stays on your machine</div><h2>Your prompt</h2><div class="body empty" id="s1">Run a prompt to see it here.</div></div>
+    <div class="step cloud"><div class="tag">2 &middot; Sent to the LLM</div><h2>Sanitized prompt</h2><div class="body empty" id="s2">Placeholders replace sensitive values.</div></div>
+    <div class="step cloud"><div class="tag">3 &middot; Received from the LLM</div><h2>LLM reply</h2><div class="body empty" id="s3">The model only ever saw step 2.</div></div>
+    <div class="step local"><div class="tag">4 &middot; Shown to you</div><h2>Final reply</h2><div class="body empty" id="s4">Original values restored locally.</div></div>
+  </section>
+  <div class="stat" id="stat"></div>
+  <footer>Highlighted tags are placeholders. The mapping from placeholder to real value stays in local memory and is never sent or returned by the API.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const hl=s=>esc(s).replace(/\[\s*[A-Za-z]+[_ ]\d+\s*\]/g,m=>'<mark>'+m+'</mark>');
+const SAMPLES=[
+ "Summarize this medical record for John Doe, SSN 123-45-6789, email john.doe@example.com, phone 9876543210.",
+ "Patient Priya Sharma from Pune was admitted to Apollo Hospital on 12/03/2025. Aadhaar 2345 6789 0123. Write a short discharge note.",
+ "summarize the record for rohan sharma, ssn 423 61 5386, call 71819 60013."];
+let sid=null;
+function put(id,html){const e=$(id);e.classList.remove('empty');e.innerHTML=html}
+function clearAll(){["s1","s2","s3","s4"].forEach(i=>{$(i).classList.add('empty')});
+ $('s1').textContent="Run a prompt to see it here.";$('s2').textContent="Placeholders replace sensitive values.";
+ $('s3').textContent="The model only ever saw step 2.";$('s4').textContent="Original values restored locally.";$('stat').innerHTML=""}
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{$('prompt').value=SAMPLES[c.dataset.i]});
+$('strategy').onchange=()=>{sid=null};
+$('backend').onchange=async()=>{
+ const o=$('backend').value==='ollama';$('mwrap').hidden=!o;if(!o)return;
+ const sel=$('model');sel.innerHTML="";
+ try{const d=await (await fetch('/models')).json();
+  (d.ollama.length?d.ollama:[""]).forEach(m=>{const op=document.createElement('option');op.value=m;op.textContent=m||"No models found - is Ollama running?";sel.appendChild(op)})}
+ catch(e){sel.innerHTML='<option value="">Could not reach server</option>'}};
+$('reset').onclick=async()=>{if(sid){try{await fetch('/session/'+sid,{method:'DELETE'})}catch(e){}}sid=null;clearAll();$('err').textContent=""};
+$('run').onclick=async()=>{
+ const prompt=$('prompt').value.trim();if(!prompt)return;
+ const b=$('run');b.disabled=true;b.textContent="Running...";$('err').textContent="";
+ try{
+  const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+   prompt,session_id:sid,strategy:$('strategy').value,backend:$('backend').value,
+   model:$('backend').value==='ollama'?($('model').value||null):null})});
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||r.statusText);
+  sid=d.session_id;
+  put('s1',esc(prompt));put('s2',hl(d.sanitized_prompt));put('s3',hl(d.raw_response));put('s4',esc(d.response));
+  $('stat').innerHTML=d.entities_masked?('<b>'+d.entities_masked+' value(s) masked in this session:</b> '+d.entities.map(e=>'<mark>'+esc(e.placeholder)+'</mark>').join(' ')):'No sensitive values were detected in this session.';
+ }catch(e){$('err').textContent=e.message}
+ finally{b.disabled=false;b.textContent="Run through firewall"}};
+</script></body></html>

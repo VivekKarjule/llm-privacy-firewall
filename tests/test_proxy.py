@@ -44,3 +44,19 @@ def test_delete_session():
 
 def test_health():
     assert client.get("/health").json()["status"] == "ok"
+
+
+def test_ui_page_is_served():
+    r = client.get("/")
+    assert r.status_code == 200 and "Privacy Firewall" in r.text
+
+
+def test_response_has_raw_reply_and_entity_names_but_no_originals():
+    r = post().json()
+    assert "[SSN_1]" in r["raw_response"].upper() or "[ssn_1]" in r["raw_response"]
+    assert {e["label"] for e in r["entities"]} == {"SSN", "EMAIL"}
+    assert "123-45-6789" not in str(r["entities"])
+
+
+def test_models_endpoint_returns_a_list():
+    assert isinstance(client.get("/models").json()["ollama"], list)
